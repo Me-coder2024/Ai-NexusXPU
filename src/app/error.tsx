@@ -1,0 +1,2 @@
+'use client';
+export default function ErrorPage({reset}:{reset:()=>void}){return <main className="inner-shell"><div className="inner-content" style={{borderRadius:28}}><span className="eyebrow">A SMALL DETOUR</span><h1 className="page-title">LET’S TRY THAT AGAIN.</h1><p className="page-description">This page couldn’t load. Please try again in a moment.</p><button className="primary-button" onClick={reset}>Try again ↗</button></div></main>}

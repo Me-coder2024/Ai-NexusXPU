@@ -1,0 +1,1 @@
+export default function Loading(){return <div className="inner-shell"><div className="inner-content" style={{borderRadius:28}}><p className="eyebrow" role="status">LOADING YOUR NEXT CHAPTER…</p></div></div>}

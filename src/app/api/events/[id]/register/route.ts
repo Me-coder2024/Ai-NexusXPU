@@ -1,0 +1,6 @@
+import {NextResponse} from 'next/server';
+import {getMember,sameOrigin} from '@/lib/auth';
+import {db} from '@/lib/db';
+import {registrationSchema} from '@/lib/validation';
+import {z} from 'zod';
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request origin.'},{status:403});const user=await getMember();if(!user)return NextResponse.json({error:'Sign in with your university account before registering.'},{status:401});const{id}=await params;try{z.string().uuid().parse(id);const input=registrationSchema.parse(await request.json());if(input.email!==user.email)return NextResponse.json({error:'Use the same university email as your signed-in account.'},{status:400});const{data,error}=await db().rpc('register_for_event',{p_event:id,p_user:user.id,p_data:input});if(error)return NextResponse.json({error:error.code==='23505'?'You are already registered for this event.':error.message},{status:400});return NextResponse.json({id:data.id,status:data.status},{status:201});}catch{return NextResponse.json({error:'Check your registration details and try again.'},{status:400})}}

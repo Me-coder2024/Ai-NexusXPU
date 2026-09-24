@@ -1,0 +1,3 @@
+import {NextResponse} from 'next/server';
+import {db,databaseConfigured} from '@/lib/db';
+export async function GET(){if(!databaseConfigured())return NextResponse.json({configured:false,events:[]});try{const{data,error}=await db().from('events').select('id,title,type,description,starts_at,venue,capacity,status').eq('published',true).order('starts_at');if(error)return NextResponse.json({configured:false,events:[]});return NextResponse.json({configured:true,events:data.map(e=>({...e,when:new Date(e.starts_at).toLocaleDateString('en-IN',{month:'short',day:'numeric',year:'numeric'})}))});}catch{return NextResponse.json({configured:false,events:[]})}}
