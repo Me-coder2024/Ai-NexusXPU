@@ -10,7 +10,6 @@ export async function POST(request:Request){
     if(!result.success)return NextResponse.json({error:result.error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join(' ')},{status:400});
     const{name,enrollment,email,personalEmail,...details}=result.data;
     const contactEmail=(email&&email!==''?email:personalEmail||'').toLowerCase();
-    const isFirstYear=result.data.year==='1';
     const client=db();
 
     // Insert application
@@ -24,31 +23,30 @@ export async function POST(request:Request){
     }
 
     // Auto-create student user account for portal access
-    // For 1st year: use personal email (they don't have university email yet)
-    // For others: use university email
-    const portalEmail=contactEmail;
-    const{data:existingUser}=await client.from('users').select('id').eq('email',portalEmail).maybeSingle();
+    // Skip if user already exists (e.g. re-applying with same email)
+    const{data:existingUser}=await client.from('users').select('id').eq('email',contactEmail).maybeSingle();
     if(!existingUser){
-      // Create user — for 1st year with personal email, use APPLICANT status (no STUDENT role constraint on email)
-      // For university email students, create with STUDENT role
-      const hasUniversityEmail=email&&email!=='';
-      await client.from('users').insert({
-        email:portalEmail,
+      // Create user and get their ID back
+      const{data:newUser,error:userError}=await client.from('users').insert({
+        email:contactEmail,
         name,
-        roles:hasUniversityEmail?['STUDENT']:['STUDENT'],
+        roles:['STUDENT'],
         permissions:{},
         disabled:false
-      });
+      }).select('id').single();
 
-      // Create student profile
-      await client.from('student_profiles').insert({
-        name,enrollment,email:portalEmail,
-        department:details.department||'',
-        year:result.data.year,
-        details:{institute:details.institute||'',division:details.division||'',semester:details.semester||'',skillLevel:details.skillLevel||'',personalEmail:personalEmail||'',universityEmail:email||''}
-      });
+      // Create student profile linked to the user (only if user was created)
+      if(!userError&&newUser){
+        await client.from('student_profiles').insert({
+          id:newUser.id,
+          name,enrollment,email:contactEmail,
+          department:details.department||'',
+          year:result.data.year,
+          details:{institute:details.institute||'',division:details.division||'',semester:details.semester||'',skillLevel:details.skillLevel||'',personalEmail:personalEmail||'',universityEmail:email||''}
+        });
+      }
     }
 
     return NextResponse.json({id:app.id},{status:201});
-  }catch{return NextResponse.json({error:'Unable to submit this application. Please try again.'},{status:400})}
+  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:'Unable to submit this application. Please try again.'},{status:400})}
 }
