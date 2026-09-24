@@ -41,13 +41,12 @@ export async function POST(request:Request){
       });
 
       // Create student profile
-      await client.from('student_profiles').upsert({
-        id:existingUser?.id,
+      await client.from('student_profiles').insert({
         name,enrollment,email:portalEmail,
         department:details.department||'',
         year:result.data.year,
         details:{institute:details.institute||'',division:details.division||'',semester:details.semester||'',skillLevel:details.skillLevel||'',personalEmail:personalEmail||'',universityEmail:email||''}
-      },{onConflict:'email',ignoreDuplicates:true});
+      });
     }
 
     return NextResponse.json({id:app.id},{status:201});
