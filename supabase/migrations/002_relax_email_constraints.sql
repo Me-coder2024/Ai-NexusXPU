@@ -1,53 +1,60 @@
 -- ============================================================
--- AI NEXUS — Complete Database Update
--- Run this ONCE in Supabase SQL Editor
+-- AI NEXUS — BULLETPROOF Database Fix
+-- Run in Supabase SQL Editor
 -- ============================================================
--- This migration:
---   1. Relaxes email constraints (allow personal emails for 1st year students)
---   2. Allows admin/faculty accounts with non-university emails
---   3. Keeps enrollment number unique (no duplicate applications)
---   4. Creates the admin account (me.coder.in@gmail.com)
+-- Finds and drops ALL check constraints on users and applications
+-- tables, then re-adds only what we need.
 -- ============================================================
 
-begin;
+-- Step 1: Drop ALL check constraints from users table
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT con.conname
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE rel.relname = 'users'
+      AND nsp.nspname = 'public'
+      AND con.contype = 'c'
+  ) LOOP
+    EXECUTE format('ALTER TABLE public.users DROP CONSTRAINT IF EXISTS %I', r.conname);
+  END LOOP;
+END $$;
 
--- -------------------------------------------------------
--- 1. RELAX EMAIL CONSTRAINTS
--- -------------------------------------------------------
+-- Step 2: Drop ALL check constraints from applications table
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT con.conname
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE rel.relname = 'applications'
+      AND nsp.nspname = 'public'
+      AND con.contype = 'c'
+  ) LOOP
+    EXECUTE format('ALTER TABLE public.applications DROP CONSTRAINT IF EXISTS %I', r.conname);
+  END LOOP;
+END $$;
 
--- Remove the university-email-only check on applications table
--- (1st year students apply with personal emails like gmail.com)
-alter table public.applications drop constraint if exists applications_email_check;
-
--- Remove the composite check on users table that forces STUDENT role
--- to have university email (1st year students use personal email)
-alter table public.users drop constraint if exists users_check;
-
--- Re-add a general email format check on applications (any valid email)
-alter table public.applications add constraint applications_email_check 
-  check(email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$');
-
--- Re-add roles validation without email domain restriction
-alter table public.users drop constraint if exists users_roles_check;
-alter table public.users add constraint users_roles_check check(
+-- Step 3: Re-add only the constraints we need (no email domain restrictions)
+ALTER TABLE public.users ADD CONSTRAINT users_roles_valid CHECK (
   roles <@ array['SUPER_ADMIN','CONFIG_ADMIN','CLUB_LEAD','CORE_TEAM','FACULTY','STUDENT']::text[]
-  and cardinality(roles) > 0
+  AND cardinality(roles) > 0
 );
 
--- -------------------------------------------------------
--- 2. ENSURE ENROLLMENT UNIQUENESS (already exists, but confirm)
--- -------------------------------------------------------
--- The original schema already has: enrollment text unique not null
--- This means each enrollment/UG number can only submit one application.
--- If a duplicate is attempted, the app returns:
---   "An application already exists for this enrollment number or email."
+ALTER TABLE public.applications ADD CONSTRAINT applications_email_format CHECK (
+  email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+);
 
--- -------------------------------------------------------
--- 3. CREATE ADMIN ACCOUNT
--- -------------------------------------------------------
--- Insert admin user (skip if already exists)
-insert into public.users (email, name, roles, permissions, disabled)
-values ('me.coder.in@gmail.com', 'Admin', '{SUPER_ADMIN}', '{}', false)
-on conflict (email) do update set roles = '{SUPER_ADMIN}';
+ALTER TABLE public.applications ADD CONSTRAINT applications_status_valid CHECK (
+  status IN ('Submitted','Under Review','Round 1 Shortlisted','Round 1 Rejected','Round 2 Shortlisted','Selected','Waitlisted','Rejected')
+);
 
-commit;
+-- Step 4: Create or update admin account
+INSERT INTO public.users (email, name, roles, permissions, disabled)
+VALUES ('me.coder.in@gmail.com', 'Admin', '{SUPER_ADMIN}', '{}', false)
+ON CONFLICT (email) DO UPDATE SET roles = '{SUPER_ADMIN}';
