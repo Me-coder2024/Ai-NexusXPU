@@ -1,7 +1,8 @@
 import {NextResponse} from 'next/server';
 import {db,databaseConfigured} from '@/lib/db';
-import {sameOrigin} from '@/lib/auth';
+import {sameOrigin} from '@/lib/request-origin';
 import {applicationSchema} from '@/lib/validation';
+export const runtime='nodejs';
 export async function POST(request:Request){
   try{
     if(!sameOrigin(request))return NextResponse.json({error:'Invalid request origin.'},{status:403});
