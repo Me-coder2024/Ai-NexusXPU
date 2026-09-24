@@ -1,11 +1,13 @@
 // Uses a uniquely marked test applicant and cleans up only records from that test.
 const base=process.argv[2]||'http://localhost:3000';
 const marker=crypto.randomUUID();
-const email=`test-${marker}@paruluniversity.ac.in`;
+const firstYear=process.argv.includes('--first-year');
+const email=`test-${marker}@${firstYear?'example.com':'paruluniversity.ac.in'}`;
 const enrollment=`TEST-${marker}`;
 const headers={apikey:process.env.SUPABASE_SECRET_KEY};
 const rest=process.env.SUPABASE_URL+'/rest/v1/';
 const input={name:'AUTOMATED TEST - DELETE',enrollment,email,personalEmail:'',phone:'9999999999',institute:'Test Institute',department:'Test Department',division:'TEST',year:'2',semester:'3',skillLevel:'Beginner',github:'',linkedin:'',portfolio:'',motivation:'Automated verification of optional empty application links.',experience:'',consent:true};
+if(firstYear){input.email='';input.personalEmail=email;input.year='1';input.semester='1';}
 try{
  const response=await fetch(base+'/api/applications',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify(input)});
  const body=await response.text();let data;try{data=JSON.parse(body)}catch{throw new Error(`Submission returned ${response.status} with a non-JSON response.`)}

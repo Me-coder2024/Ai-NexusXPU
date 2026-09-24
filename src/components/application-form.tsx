@@ -1,4 +1,5 @@
 'use client';
+import {CommunityUpdates} from './community-updates';
 import {useState} from 'react';
 import Link from 'next/link';
 import {ArrowUpRight,CheckCircle2} from 'lucide-react';
@@ -43,7 +44,7 @@ export function ApplicationForm(){
     finally{setBusy(false)}
   }
 
-  if(receipt)return <div className="success-message" role="status"><CheckCircle2 size={35}/><h2>You&apos;re one step closer.</h2><p>Your application has been saved. Keep your candidate ID: <strong>{receipt}</strong></p><p>Your student portal is ready! Sign in with the same Google account you used to apply. Some sections will unlock after your interview.</p><Link className="primary-button" href="/login">Sign in to your portal ↗</Link></div>;
+  if(receipt)return <div className="success-message" role="status"><CheckCircle2 size={35}/><h2>You&apos;re one step closer.</h2><p>Your application has been saved. Keep your candidate ID: <strong>{receipt}</strong></p><p>Sign in with the same Google account you used to apply to open your student portal. Follow our official channels for interview schedules and further updates.</p><Link className="primary-button" href="/login">Sign in to your portal ↗</Link><CommunityUpdates/></div>;
 
   return <form onSubmit={submit}>
     <div className="form-grid">

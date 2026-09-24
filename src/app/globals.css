@@ -85,3 +85,5 @@
   .intro-section h2{font-size:29px}
   .page-title{font-size:29px}
 }
+
+.community-updates{display:flex;align-items:center;justify-content:space-between;gap:28px;background:#f0f5ff;border:1px solid #d9e4ff;border-radius:20px;padding:25px;margin-bottom:28px;color:#142b60}.community-updates h2{font-size:22px;letter-spacing:-.7px;margin:10px 0}.community-updates p{font-size:13px;line-height:1.8;max-width:650px;margin:0}.community-updates .eyebrow{color:#063ace;font-size:9px}.community-update-links{display:flex;flex-direction:column;gap:10px;flex-shrink:0}.community-update-links a{display:flex;align-items:center;gap:12px;border-radius:28px;min-height:46px;padding:12px 17px;background:#063ace;color:white;font-size:12px;font-weight:700}.community-update-links a:last-child{background:#b6ff00;color:#153200}.success-message .community-updates{margin-top:24px;margin-bottom:0}@media(max-width:700px){.community-updates{flex-direction:column;align-items:stretch;padding:22px;gap:20px}.community-updates h2{font-size:21px}.community-update-links a{justify-content:center;min-height:48px}.community-updates p{font-size:13px}}
