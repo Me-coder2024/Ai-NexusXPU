@@ -3,7 +3,7 @@ import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {getMember,sameOrigin} from '@/lib/auth';
 import {db} from '@/lib/db';
-import {can,ROLES,universityEmail,type Member} from '@/lib/permissions';
+import {can,ROLES,universityEmail,isAdmin,portalRole,type Member} from '@/lib/permissions';
 import {configs} from '@/lib/module-config';
 const fail=(message:string,status=400)=>NextResponse.json({error:message},{status});
 function studentScope(user:Member,module:string){return user.roles.includes('STUDENT')&&!can({...user,roles:user.roles.filter(r=>r!=='STUDENT')},module)}
@@ -14,6 +14,14 @@ export async function GET(request:Request,{params}:{params:Promise<{module:strin
  }
  if(module==='profile'){const{data,error}=await client.from('student_profiles').select('*').eq('id',user.id).maybeSingle();if(error)throw error;return NextResponse.json({profile:data,user:{id:user.id,name:user.name,email:user.email,roles:user.roles}})}
  const config=configs[module];if(!config)return fail('Module not found.',404);let query=client.from(config.table).select('*').order('created_at',{ascending:false}).limit(1000);
+ if(portalRole(user)==='core-team'&&!studentScope(user,module)){
+ const {data:assigned,error:assignmentError}=await client.from('batches').select('id').contains('core_member_ids',[user.id]);if(assignmentError)throw assignmentError;const ids=(assigned||[]).map(b=>b.id);
+ if(module==='batches')query=query.in('id',ids);
+ if(['syllabus','attendance'].includes(module))query=query.in('batch_id',ids);
+ if(module==='students'){const {data:members,error}=await client.from('batch_members').select('student_id').in('batch_id',ids);if(error)throw error;query=query.in('id',(members||[]).map(m=>m.student_id));}
+ if(['events','registrations'].includes(module)){const {data:tasks,error}=await client.from('club_tasks').select('event_id').eq('assignee_id',user.id).not('event_id','is',null);if(error)throw error;query=query.in(module==='events'?'id':'event_id',(tasks||[]).map(t=>t.event_id));}
+ if(['research','industry'].includes(module))query=query.contains('member_ids',[user.id]);
+ }
  if(module==='notifications')query=query.eq('user_id',user.id);
  if(module==='team')query=query.contains('roles',['CORE_TEAM']);
  if(studentScope(user,module)){
@@ -21,21 +29,22 @@ export async function GET(request:Request,{params}:{params:Promise<{module:strin
  else if(module==='registrations')query=query.eq('user_id',user.id);
  else if(['attendance','certificates'].includes(module))query=query.eq('student_id',user.id);
  else if(module==='batches')query=query.in('id',await batchIds(user));
- else if(module==='syllabus')query=query.in('batch_id',await batchIds(user));
+ else if(module==='syllabus')query=query.in('batch_id',await batchIds(user)).in('status',['Active','Completed']);
  else if(module==='research')query=query.contains('member_ids',[user.id]);
  else if(module==='events')query=query.eq('published',true);
  }
  const{data,error}=await query;if(error)throw error;let rows=data||[];
  if(module==='circulars'){
- const ids=await batchIds(user);const admin=user.roles.some(r=>['SUPER_ADMIN','CONFIG_ADMIN','CLUB_LEAD'].includes(r));rows=rows.filter(r=>admin||((!r.expires_at||r.expires_at>=new Date().toISOString().slice(0,10))&&(r.audience==='General'||(r.audience==='Batch'&&ids.includes(r.batch_id))||(r.audience==='Faculty'&&user.roles.includes('FACULTY'))||(r.audience==='Core Team'&&user.roles.includes('CORE_TEAM')))));
+ const ids=await batchIds(user);const admin=isAdmin(user);if(portalRole(user)==='core-team'){const {data:assigned}=await client.from('batches').select('id').contains('core_member_ids',[user.id]);ids.push(...(assigned||[]).map(b=>b.id));}rows=rows.filter(r=>admin||((!r.expires_at||r.expires_at>=new Date().toISOString().slice(0,10))&&(r.audience==='General'||(r.audience==='Batch'&&ids.includes(r.batch_id))||(r.audience==='Faculty'&&user.roles.includes('FACULTY'))||(r.audience==='Core Team'&&user.roles.includes('CORE_TEAM')))));
  }
- if(module==='applications'&&studentScope(user,module))rows=rows.map(({notes,...r})=>{void notes;return r});
+ if(module==='applications'&&studentScope(user,module))rows=rows.map(r=>({id:r.id,name:r.name,enrollment:r.enrollment,status:r.status,program:r.program,batch_id:r.batch_id,created_at:r.created_at}));
  return NextResponse.json({rows});
  }catch{return fail('The database tables are not ready or could not be read. Please contact the club administrator.',503)}}
 export async function POST(request:Request,{params}:{params:Promise<{module:string}>}){if(!sameOrigin(request))return fail('Invalid request origin.',403);const user=await getMember();if(!user)return fail('Please sign in again.',401);const{module}=await params;try{const raw=await readJsonBody(request,65536);const body=z.record(z.string(),z.unknown()).parse(raw);const action=z.enum(['create','edit','delete','assign']).parse(body.action||'create');if(!['create','edit','delete','assign'].includes(action))return fail('Unsupported action.');if(!can(user,module,module==='profile'?'edit':action))return fail('You do not have permission for this action.',403);const client=db();
+ if(['applications','interviews','batches','attendance'].includes(module))return fail('Use the dedicated interview, batch or attendance workspace for this action.',403);
  if(module==='batches'&&action==='assign'){const input=z.object({id:z.string().uuid(),students:z.array(z.string().uuid()).min(1).max(1000)}).parse(body);const{data,error}=await client.rpc('assign_batch',{p_batch:input.id,p_students:input.students,p_actor:user.id});if(error)return fail('Unable to save the record. Check the details and capacity, then try again.');return NextResponse.json({added:data})}
  if(module==='profile'){
- const input=z.object({name:z.string().min(1).max(200),enrollment:z.string().min(1).max(100),department:z.string().min(1).max(200),year:z.string().min(1).max(50),phone:z.string().max(30),institute:z.string().max(200),division:z.string().max(50),semester:z.string().max(50),skills:z.string().max(2000),interests:z.string().max(2000),github:z.string().max(500),linkedin:z.string().max(500),portfolio:z.string().max(500)}).parse(body.data);const{name,enrollment,department,year,...details}=input;const{data:old}=await client.from('student_profiles').select('id').eq('id',user.id).maybeSingle();const{error}=await client.rpc('mutate_record',{p_table:'student_profiles',p_action:old?'edit':'create',p_id:user.id,p_data:{id:user.id,name,enrollment,department,year,email:user.email,details},p_actor:user.id});if(error)return fail(error.code==='23505'?'This enrollment number is already registered.':'The database could not save this change. Check the field values.');return NextResponse.json({ok:true});
+ const input=z.object({name:z.string().min(1).max(200),enrollment:z.string().min(1).max(100),department:z.string().min(1).max(200),year:z.string().min(1).max(50),phone:z.string().max(30),institute:z.string().max(200),division:z.string().max(50),semester:z.string().max(50),skills:z.string().max(2000),interests:z.string().max(2000),github:z.string().max(500),linkedin:z.string().max(500),portfolio:z.string().max(500)}).parse(body.data);const{name,enrollment,department,year,...details}=input;const{data:old}=await client.from('student_profiles').select('id,details').eq('id',user.id).maybeSingle();const{error}=await client.rpc('mutate_record',{p_table:'student_profiles',p_action:old?'edit':'create',p_id:user.id,p_data:{id:user.id,name,enrollment,department,year,email:user.email,details:{...old?.details,...details}},p_actor:user.id});if(error)return fail(error.code==='23505'?'This enrollment number is already registered.':'The database could not save this change. Check the field values.');return NextResponse.json({ok:true});
  }
  const config=configs[module];if(!config||config.readOnly)return fail('This module is read-only.',403);if(module==='applications'&&action!=='edit')return fail('Applications must be submitted using the application form.');const id=body.id?z.string().uuid().parse(body.id):null;if(['edit','delete'].includes(action)&&!id)return fail('A record ID is required.');
  const values:Record<string,unknown>={};if(action!=='delete')for(const field of config.fields){let value=(body.data as Record<string,unknown>|undefined)?.[field.key];if(value===undefined||value===''){if(field.required)return fail(`${field.label} is required.`);if(field.type==='number'||field.type==='date'||field.type==='datetime-local'||field.key.endsWith('_id')){values[field.key]=null;continue;}value='';}
@@ -52,10 +61,17 @@ export async function POST(request:Request,{params}:{params:Promise<{module:stri
  if(field.key==='member_ids')value=String(value).trim()?z.array(z.string().uuid()).parse(String(value).split(',').map(s=>s.trim())):[];
  values[field.key]=value;
  }
+ if(portalRole(user)==='core-team'){
+ if(['events','research','industry','syllabus'].includes(module)){if(action==='create')return fail('Ask Admin to create and assign this record first.',403);
+ const {data:target}=await client.from(config.table).select('*').eq('id',id).single();if(!target)return fail('Record not found.',404);
+ if(module==='events'){const {data:task}=await client.from('club_tasks').select('id').eq('event_id',id).eq('assignee_id',user.id).limit(1);if(!task?.length)return fail('This event is not assigned to you.',403);}
+ if(['research','industry'].includes(module)&&!target.member_ids?.includes(user.id))return fail('This project is not assigned to you.',403);
+ if(module==='syllabus'){const {data:b}=await client.from('batches').select('core_member_ids').eq('id',target.batch_id).single();if(!b?.core_member_ids?.includes(user.id)||values.batch_id&&values.batch_id!==target.batch_id)return fail('This batch is not assigned to you.',403);}
+ }
+ }
  if(module==='users'){
  if(id===user.id)return fail('You cannot modify your own administrative access.');
- if(action!=='delete'&&(values.roles as string[]).includes('STUDENT')&&!universityEmail(String(values.email)))return fail('Students must use @paruluniversity.ac.in.');
- if(!user.roles.includes('SUPER_ADMIN')){if((values.roles as string[]|undefined)?.some(r=>['SUPER_ADMIN','CONFIG_ADMIN'].includes(r)))return fail('Only a Super Admin can assign administrator roles.',403);if(id){const{data:target}=await client.from('users').select('roles').eq('id',id).single();if(target?.roles.some((r:string)=>['SUPER_ADMIN','CONFIG_ADMIN'].includes(r)))return fail('Only a Super Admin can modify administrators.',403);}}
+ if(action!=='delete'&&(values.roles as string[]).includes('STUDENT')&&!universityEmail(String(values.email))){const {data:app}=await client.from('applications').select('id').eq('email',values.email).maybeSingle();if(!app)return fail('Student access requires a university email or an existing first-year application.');}
  }
  if(module==='team'){if(action!=='edit'||!id)return fail('Only permissions of existing core members can be edited here.');const{data:target}=await client.from('users').select('roles').eq('id',id).single();if(!target?.roles.includes('CORE_TEAM')||target.roles.some((r:string)=>['SUPER_ADMIN','CONFIG_ADMIN','CLUB_LEAD'].includes(r)))return fail('This account cannot be managed through core team access.',403);const assigned=values.permissions as Record<string,string[]>;if(Object.keys(assigned).some(m=>['users','configuration','team','audit'].includes(m)))return fail('Core team grants cannot include administrator or permission-management modules.',403);}
  if(module==='attendance')values.marked_by=user.id;

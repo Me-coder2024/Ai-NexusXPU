@@ -38,3 +38,9 @@ This is a focused application review, not a penetration-test certification or a 
 - Review all multi-role combinations with real test accounts, use least-privilege staff permissions, and enable MFA on the Supabase, Firebase, GitHub, and Vercel owner accounts. Backup/restore, infrastructure configuration, and account-level security were not assessed here.
 
 The Supabase project URL and publishable key are public identifiers. Private data protection comes from database grants/RLS and the authenticated server, not from hiding that URL. See [Supabase API keys](https://supabase.com/docs/guides/getting-started/api-keys) and [Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+## Role workflow upgrade
+
+The four dashboards use server-side authorization. Core Team event/project operations are limited to assigned records, attendance to assigned batch rosters, and student queries to their own records. Admission finalization is admin-only. New transaction tests cover denied role escalation, Core Team recommendations, year-capacity rollback, attendance ownership and Faculty approval permissions. New tasks and feedback tables revoke direct anonymous/authenticated access. Legacy generic mutation endpoints cannot bypass the dedicated applications, interviews, batches or attendance workflows.
+
+A read-only production schema check after migration 003 found the existing 243 applications intact. No live applicant records were used for workflow mutation tests; those ran in an isolated PostgreSQL-compatible database. This is a focused authorization review, not a claim that every possible vulnerability has been eliminated.
